@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  full_name  String
+  email      String    @unique
+  password   String
+  role       UserRole  @default(TRUONG_LOP)
+  class_name String?
+  created_at DateTime  @default(now())
+
+  checkins   Checkin[] @relation("LeaderCheckins")
+
+  @@map("users")
+}
+
+model Student {
+  id         String    @id
+  full_name  String
+  saint_name String
+  phone      String?
+  class_name String
+  nganh      String
+  qr_code    String    @unique @db.Uuid
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now())
+
+  checkins   Checkin[]
+
+  @@index([class_name])
+  @@index([nganh])
+  @@map("students")
+}
+
+model Activity {
+  id             Int             @id @default(autoincrement())
+  name           String
+  point          Int
+  is_active      Boolean         @default(true)
+  created_at     DateTime        @default(now())
+
+  checkinDetails CheckinDetail[]
+
+  @@map("activities")
+}
+
+model Checkin {
+  id           Int             @id @default(autoincrement())
+  student_id   String
+  checked_by   Int
+  checkin_date DateTime        @db.Date
+  total_point  Int             @default(0)
+  created_at   DateTime        @default(now())
+
+  student      Student         @relation(fields: [student_id], references: [id])
+  leader       User            @relation("LeaderCheckins", fields: [checked_by], references: [id])
+  details      CheckinDetail[]
+
+  @@unique([student_id, checkin_date])
+  @@index([checkin_date])
+  @@map("checkins")
+}
+
+model CheckinDetail {
+  id          Int      @id @default(autoincrement())
+  checkin_id  Int
+  activity_id Int
+  point       Int
+
+  checkin     Checkin  @relation(fields: [checkin_id], references: [id])
+  activity    Activity @relation(fields: [activity_id], references: [id])
+
+  @@unique([checkin_id, activity_id])
+  @@map("checkin_details")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  XU_DOAN_TRUONG
+  XU_DOAN_PHO
+  TRUONG_TRUC
+  TRUONG_LOP
+}

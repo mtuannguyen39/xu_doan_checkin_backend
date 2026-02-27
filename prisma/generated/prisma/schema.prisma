@@ -1,0 +1,91 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  XU_DOAN_TRUONG
+  XU_DOAN_PHO
+  TRUONG_TRUC
+  TRUONG_LOP
+}
+
+model User {
+  id         String   @id @db.Uuid
+  full_name  String
+  role       UserRole @default(TRUONG_LOP)
+  class_name String?
+  created_at DateTime @default(now())
+
+  checkins Checkin[]
+
+  @@map("users")
+}
+
+model Student {
+  id         String   @id @default(uuid()) @db.Uuid
+  full_name  String
+  phone      String?
+  class_name String
+  nganh      String
+  qr_code    String?  @unique @db.Uuid
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  checkins Checkin[]
+
+  @@index([class_name])
+  @@index([phone])
+  @@map("students")
+}
+
+model Activity {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  point      Int
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  checkinDetails CheckinDetail[]
+
+  @@map("activities")
+}
+
+model Checkin {
+  id           String   @id @default(uuid()) @db.Uuid
+  student_id   String   @db.Uuid
+  checked_by   String   @db.Uuid
+  checkin_date DateTime @db.Date
+  total_point  Int
+  created_at   DateTime @default(now())
+
+  student Student         @relation(fields: [student_id], references: [id])
+  user    User            @relation(fields: [checked_by], references: [id])
+  details CheckinDetail[]
+
+  @@unique([student_id, checkin_date])
+  @@map("checkins")
+}
+
+model CheckinDetail {
+  id          String @id @default(uuid()) @db.Uuid
+  checkin_id  String @db.Uuid
+  activity_id String @db.Uuid
+  point       Int
+
+  checkin  Checkin  @relation(fields: [checkin_id], references: [id])
+  activity Activity @relation(fields: [activity_id], references: [id])
+
+  @@map("checkin_details")
+}
