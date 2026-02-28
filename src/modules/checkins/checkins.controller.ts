@@ -36,6 +36,8 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Student is not active" });
     }
 
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
     if (req.user.role === "TRUONG_LOP") {
       if (student.class_name !== req.user.class_name) {
         return res.status(403).json({
@@ -97,6 +99,7 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
 export const createCheckin = async (req: AuthRequest, res: Response) => {
   try {
     const { student_id, activities } = req.body as CheckinRequest;
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const checked_by = req.user.id;
 
     // Validate input
