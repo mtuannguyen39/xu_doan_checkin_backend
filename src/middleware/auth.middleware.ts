@@ -4,16 +4,18 @@ import { Permission } from "./rbac.middleware";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+// ✅ FIX: Extend Request trực tiếp, KHÔNG định nghĩa lại interface riêng
+// Cách này đảm bảo body, params, query, headers đều được kế thừa từ Request
 export interface AuthRequest extends Request {
   user?: {
     id: number;
-    role: string; // string vì đến từ JWT payload
+    role: string;
     email?: string;
     full_name?: string;
-    class_name?: string; // 🔑 Quan trọng cho TRUONG_LOP filter
+    class_name?: string;
     permissions?: Permission[];
   };
-  classFilter?: string | null; // Được gán bởi filterByClass middleware
+  classFilter?: string | null;
 }
 
 export const verifyToken = (
@@ -21,7 +23,7 @@ export const verifyToken = (
   res: Response,
   next: NextFunction,
 ) => {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers["authorization"];
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res

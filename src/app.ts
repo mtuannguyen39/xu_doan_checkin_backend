@@ -11,7 +11,6 @@ import rankingRoutes from "./modules/ranking/ranking.route";
 
 const app = express();
 
-// ✅ Cho phép nhiều origin: localhost dev + Vercel production
 const allowedOrigins = [
   "http://localhost:3000",
   process.env.FRONTEND_URL,
@@ -19,8 +18,10 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Cho phép request không có origin (mobile app, Postman, curl)
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS blocked: ${origin}`));
@@ -31,7 +32,6 @@ app.use(
 
 app.use(express.json());
 
-// Routes
 app.use("/api/students", studentRoutes);
 app.use("/api/activities", activityRoutes);
 app.use("/api/checkins", checkinRoutes);
@@ -40,8 +40,7 @@ app.use("/api/statistics", statisticsRoutes);
 app.use("/api/ranking", rankingRoutes);
 app.use("/api/auth", authRoutes);
 
-// Health check — Render dùng cái này để biết server đang sống
-app.get("/api/health", (_, res) => {
+app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
