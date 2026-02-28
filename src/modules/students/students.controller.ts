@@ -4,7 +4,6 @@ import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { generateStudentId } from "../../utils/generateStudentId";
 import { AuthRequest } from "../../middleware/auth.middleware";
 
-// ✅ Define custom interface
 interface StudentParams {
   qr: string;
 }
@@ -32,17 +31,16 @@ export const registerStudent = async (req: Request, res: Response) => {
 
     const { qr_code, ...safeData } = student;
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Thiếu nhi đã được tạo thành công!",
       data: safeData,
     });
   } catch (error) {
     console.error("Error creating student:", error);
-    res.status(500).json({ error: "Failed to create student" });
+    return res.status(500).json({ error: "Failed to create student" });
   }
 };
 
-// GET STUDENT BY QR CODE
 export const getStudentByQR = async (
   req: Request<StudentParams>,
   res: Response,
@@ -50,16 +48,13 @@ export const getStudentByQR = async (
   try {
     const { qr } = req.params;
 
-    // Now qr is typed as string
     if (!uuidValidate(qr)) {
       return res.status(400).json({ error: "Invalid QR code format" });
     }
 
     const student = await prisma.student.findUnique({
       where: { qr_code: qr },
-      include: {
-        checkins: true,
-      },
+      include: { checkins: true },
     });
 
     if (!student) {
@@ -67,31 +62,33 @@ export const getStudentByQR = async (
     }
 
     const { qr_code, ...safeData } = student;
-    res.json(safeData);
+    return res.json(safeData);
   } catch (error) {
     console.error("Error fetching student:", error);
-    res.status(500).json({ error: "Error fetching student" });
+    return res.status(500).json({ error: "Error fetching student" });
   }
 };
 
-// GET ALL STUDENTS
 export const getAllStudents = async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user;
-
-    let whereCondition = {};
-
-    if (user.role === "TRUONG_LOP") {
-      whereCondition = { class_name: user.class_name };
+    // ✅ FIX: guard clause - trả về 401 nếu user undefined
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
+
+    const { role, class_name } = req.user;
+
+    // ✅ FIX: cast role sang string để so sánh an toàn
+    const whereCondition =
+      role === "TRUONG_LOP" && class_name ? { class_name } : {};
 
     const students = await prisma.student.findMany({
       where: whereCondition,
       orderBy: { created_at: "desc" },
     });
 
-    res.json(students);
+    return res.json(students);
   } catch (error) {
-    res.status(500).json({ error: "Error to fetch students" });
+    return res.status(500).json({ error: "Error to fetch students" });
   }
 };

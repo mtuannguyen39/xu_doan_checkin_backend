@@ -4,7 +4,7 @@ import {
   getStudentByQR,
   getAllStudents,
 } from "./students.controller";
-import { requireRole, verifyToken } from "../../middleware/auth.middleware";
+import {verifyToken } from "../../middleware/auth.middleware";
 
 const router = Router();
 
