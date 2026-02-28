@@ -38,7 +38,7 @@ export const getDashboardStatistics = async (req: Request, res: Response) => {
       classes.map(async (cls) => {
         const todayClassCheckins = await prisma.checkin.count({
           where: {
-            checkin_time: {
+            checkin_date: {
               gte: today,
             },
             student: {
