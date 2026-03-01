@@ -29,11 +29,11 @@ export const registerStudent = async (req: Request, res: Response) => {
       },
     });
 
-    const { qr_code, ...safeData } = student;
-
+    // ✅ FIX: giữ lại qr_code trong response để frontend lưu localStorage
+    // frontend cần qr_code để render QRCodeCanvas
     return res.status(201).json({
       message: "Thiếu nhi đã được tạo thành công!",
-      data: safeData,
+      data: student, // trả toàn bộ, bao gồm qr_code
     });
   } catch (error) {
     console.error("Error creating student:", error);
@@ -61,6 +61,7 @@ export const getStudentByQR = async (
       return res.status(404).json({ message: "Student not found" });
     }
 
+    // Không trả qr_code khi lookup bằng QR (bảo mật)
     const { qr_code, ...safeData } = student;
     return res.json(safeData);
   } catch (error) {
@@ -71,14 +72,12 @@ export const getStudentByQR = async (
 
 export const getAllStudents = async (req: AuthRequest, res: Response) => {
   try {
-    // ✅ FIX: guard clause - trả về 401 nếu user undefined
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     const { role, class_name } = req.user;
 
-    // ✅ FIX: cast role sang string để so sánh an toàn
     const whereCondition =
       role === "TRUONG_LOP" && class_name ? { class_name } : {};
 
