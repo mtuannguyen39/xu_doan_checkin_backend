@@ -72,8 +72,8 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
     // Tính điểm theo giờ
     const total_point = calculateCheckinPoint(today);
     const timeLabel =
-      total_point === 10 ? "Đúng giờ"
-      : total_point === 5 ? "Trễ nhẹ"
+      total_point === 5 ? "Đúng giờ"
+      : total_point === 2 ? "Trễ nhẹ"
       : "Trễ, nhưng vẫn điểm danh được!";
 
     const checkin = await prisma.checkin.create({
@@ -95,7 +95,7 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
     });
 
     res.status(201).json({
-      message: `Checkin successful! ${timeLabel} (+${total_point} point)`,
+      message: `Điểm danh thành công với ${timeLabel} (+${total_point} point)`,
       data: { ...checkin, point_earned: total_point, time_label: timeLabel },
     });
   } catch (error) {
@@ -224,15 +224,15 @@ export const getStudentStats = async (
       _count: true,
     });
 
-    const onTime = breakdown.find((b) => b.total_point === 10)?._count ?? 0;
-    const late5 = breakdown.find((b) => b.total_point === 5)?._count ?? 0;
+    const onTime = breakdown.find((b) => b.total_point === 5)?._count ?? 0;
+    const late2 = breakdown.find((b) => b.total_point === 2)?._count ?? 0;
     const late0 = breakdown.find((b) => b.total_point === 0)?._count ?? 0;
 
     return res.json({
       student_id,
       total_points: stats._sum?.total_point ?? 0,
       total_checkins: stats._count ?? 0,
-      breakdown: { on_time: onTime, late_5pts: late5, late_0pts: late0 },
+      breakdown: { on_time: onTime, late_2pts: late2, late_0pts: late0 },
     });
   } catch (error) {
     return res.status(500).json({ error: "Failed to fetch student stats" });

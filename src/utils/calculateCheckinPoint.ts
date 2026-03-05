@@ -13,8 +13,8 @@ export function calculateCheckinPoint(now: Date = new Date()): number {
   const CUT1 = 7 * 60 + 15; // 7h15
   const CUT2 = 7 * 60 + 20;
 
-  if (totalMinutes >= START && totalMinutes <= CUT1) return 10;
-  if (totalMinutes > CUT1 && totalMinutes <= CUT2) return 5;
+  if (totalMinutes >= START && totalMinutes <= CUT1) return 5;
+  if (totalMinutes > CUT1 && totalMinutes <= CUT2) return 2;
 
   return 0;
 }
@@ -26,7 +26,7 @@ export function getCheckinLabel(point: number): {
   label: string;
   color: string;
 } {
-  if (point === 10) return { label: "Đúng giờ", color: "#10b981" };
-  if (point === 5) return { label: "Trễ nhẹ", color: "#f59e0b" };
+  if (point === 5) return { label: "Đúng giờ", color: "#10b981" };
+  if (point === 2) return { label: "Trễ nhẹ", color: "#f59e0b" };
   return { label: "Trễ, nhưng vẫn điểm danh được!", color: "#ef4444" };
 }
