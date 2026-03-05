@@ -91,3 +91,109 @@ export const getAllStudents = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Error to fetch students" });
   }
 };
+
+// UPDATE STUDENT
+// SUPER_ADMIN và TRUONG_LOP được cập nhật lớp mìn
+// Các role khác: không có quyền, cần được SUPER_ADMIN cấp
+// Chỉ cho sửa: full_name, saint_name,  is_active
+// Không cho sửa: ID, class_name, nganh (ảnh hưởng đến hệ thống)
+export const updateStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const id = String(req.params["id"]);
+    const { role, class_name } = req.user;
+    const { full_name, saint_name, phone, is_active } = req.body;
+
+    if (role !== "SUPER_ADMIN" && role !== "TRUONG_LOP") {
+      return res
+        .status(403)
+        .json({ error: "Bạn không có quyền chỉnh sửa thiếu nhi!" });
+    }
+
+    const student = await prisma.student.findUnique({ where: { id } });
+    if (!student)
+      return res.status(404).json({ error: "Không tìm thấy thiếu nhi!" });
+
+    if (role === "TRUONG_LOP" && student.class_name !== class_name) {
+      return res
+        .status(403)
+        .json({
+          error: "Bạn chỉ có thể chỉnh sửa thiếu nhi trong lớp của bạn!",
+        });
+    }
+
+    const updated = await prisma.student.update({
+      where: { id },
+      data: {
+        ...(full_name !== undefined && { full_name }),
+        ...(saint_name !== undefined && { saint_name }),
+        ...(phone !== undefined && { phone }),
+        ...(is_active !== undefined && { is_active }),
+      },
+    });
+
+    const { qr_code, ...safeData } = updated;
+    return res.json({
+      message: "Cập nhật thông tin thành công!",
+      data: safeData,
+    });
+  } catch (error) {
+    console.error("Error updating student:", error);
+    return res.status(500).json({ error: "Cập nhật thất bại!" });
+  }
+};
+
+// DELETE STUDENT
+// SUPER_ADMIN được xóa bất kì ai
+// TRUONG_LOP chỉ được xóa student trong lớp mình
+// Các role khác: không có quyền, cần được SUPER_ADMIN cấp
+export const deleteStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const id = String(req.params["id"]);
+    const { role, class_name } = req.user;
+
+    // Chỉ SUPER_ADMIN và TRUONG_LOP được xóa
+    if (role !== "SUPER_ADMIN" && role !== "TRUONG_LOP") {
+      return res.status(403).json({
+        error: "Bạn không có quyền xóa thiếu nhi!",
+      });
+    }
+
+    // Tìm student cần xóa
+    const student = await prisma.student.findUnique({ where: { id } });
+
+    if (!student) {
+      return res.status(404).json({ error: "Không tìm thấy thiếu nhi!" });
+    }
+
+    // TRUONG_LOP chỉ được xóa student trong lớp mình
+    if (role === "TRUONG_LOP" && student.class_name !== class_name) {
+      return res.status(403).json({
+        error: "Bạn chỉ có thể xóa thiếu nhi trong lớp của mình!",
+      });
+    }
+
+    // Xóa checkin details trước (foreign key constraint)
+    await prisma.checkinDetail.deleteMany({
+      where: { checkin: { student_id: id } },
+    });
+
+    // Xóa checkins
+    await prisma.checkin.deleteMany({ where: { student_id: id } });
+
+    // Xóa student
+    await prisma.student.delete({ where: { id } });
+
+    return res.json({
+      message: `Đã xóa thiếu nhi ${student.full_name} thành công!`,
+    });
+  } catch (error) {
+    console.error("Error deleting student:", error);
+    return res.status(500).json({ error: "Xóa thiếu nhi thất bại!" });
+  }
+};

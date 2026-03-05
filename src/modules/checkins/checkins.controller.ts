@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../lib/prisma";
 import { AuthRequest } from "../../middleware/auth.middleware";
 import { validate as uuidValidate } from "uuid";
+import { calculateCheckinPoint } from "../../utils/calculateCheckinPoint";
 
 interface ScanQRRequest {
   qr_code: string;
@@ -68,12 +69,19 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Tính điểm theo giờ
+    const total_point = calculateCheckinPoint(today);
+    const timeLabel =
+      total_point === 10 ? "Đúng giờ"
+      : total_point === 5 ? "Trễ nhẹ"
+      : "Trễ, nhưng vẫn điểm danh được!";
+
     const checkin = await prisma.checkin.create({
       data: {
         student_id: student.id,
         checked_by: req.user.id,
         checkin_date: checkDate,
-        total_point: 0,
+        total_point,
       },
       include: {
         student: true,
@@ -87,8 +95,8 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
     });
 
     res.status(201).json({
-      message: "Checkin successful",
-      data: checkin,
+      message: `Checkin successful! ${timeLabel} (+${total_point} point)`,
+      data: { ...checkin, point_earned: total_point, time_label: timeLabel },
     });
   } catch (error) {
     console.error("Checkin failed:", error);
@@ -176,64 +184,57 @@ export const createCheckin = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// ✅ Fix: Thêm type cho params
+// Lấy student stats
 export const getCheckinHistory = async (
   req: Request<StudentParams>,
   res: Response,
 ) => {
   try {
     const { student_id } = req.params;
-
     const checkins = await prisma.checkin.findMany({
       where: { student_id },
       include: {
-        details: {
-          include: {
-            activity: true,
-          },
-        },
-        leader: {
-          select: {
-            id: true,
-            full_name: true,
-          },
-        },
+        details: { include: { activity: true } },
+        leader: { select: { id: true, full_name: true } },
       },
-      orderBy: {
-        checkin_date: "desc",
-      },
+      orderBy: { checkin_date: "desc" },
     });
-
-    res.json(checkins);
+    return res.json(checkins);
   } catch (error) {
-    console.error("Error fetching checkin history:", error);
-    res.status(500).json({ error: "Failed to fetch checkin history" });
+    return res.status(500).json({ error: "Failed to fetch checkin history" });
   }
 };
 
-// ✅ Fix: Sửa aggregate
 export const getStudentStats = async (
   req: Request<StudentParams>,
   res: Response,
 ) => {
   try {
     const { student_id } = req.params;
-
     const stats = await prisma.checkin.aggregate({
       where: { student_id },
-      _sum: {
-        total_point: true,
-      },
-      _count: true, // ✅ Đổi từ { id: true } thành true
+      _sum: { total_point: true },
+      _count: true,
     });
 
-    res.json({
+    // Thống kê breakdown theo mức điểm
+    const breakdown = await prisma.checkin.groupBy({
+      by: ["total_point"],
+      where: { student_id },
+      _count: true,
+    });
+
+    const onTime = breakdown.find((b) => b.total_point === 10)?._count ?? 0;
+    const late5 = breakdown.find((b) => b.total_point === 5)?._count ?? 0;
+    const late0 = breakdown.find((b) => b.total_point === 0)?._count ?? 0;
+
+    return res.json({
       student_id,
-      total_points: stats._sum?.total_point ?? 0, // ✅ Dùng optional chaining
-      total_checkins: stats._count ?? 0, // ✅ _count là number khi set true
+      total_points: stats._sum?.total_point ?? 0,
+      total_checkins: stats._count ?? 0,
+      breakdown: { on_time: onTime, late_5pts: late5, late_0pts: late0 },
     });
   } catch (error) {
-    console.error("Error fetching student stats:", error);
-    res.status(500).json({ error: "Failed to fetch student stats" });
+    return res.status(500).json({ error: "Failed to fetch student stats" });
   }
 };

@@ -189,4 +189,43 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// DELETE /auth/users/:id - SUPER_ADMIN ONLY
+export const deleteUser = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    if ((req.user.role as string) !== "SUPER_ADMIN") {
+      return res
+        .status(403)
+        .json({ message: "Chỉ SUPER_ADMIN mới có thể xóa tài khoản!" });
+    }
+
+    const rawId = req.params["id"];
+    const userId = parseInt(String(rawId), 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "ID không hợp lệ" });
+    }
+
+    // Không cho tự xóa mình
+    if (req.user.id === userId) {
+      return res
+        .status(400)
+        .json({ message: "Không thể tự xóa tài khoản của mình!" });
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target)
+      return res.status(404).json({ message: "User không tồn tại!" });
+
+    await prisma.user.delete({ where: { id: userId } });
+
+    return res.json({
+      message: `Đã xóa tài khoản ${target.full_name} thành công!`,
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    return res.status(500).json({ error: "Xóa tài khoản thất bại!" });
+  }
+};
+
 export { grantPermissions, listPermissions };

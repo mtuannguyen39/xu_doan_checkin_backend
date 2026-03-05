@@ -4,6 +4,7 @@ import {
   getAttendanceLeaderboard,
   getClasses,
   getClassDetail,
+  deleteClass,
 } from "./leaderboard.controller";
 import { verifyToken } from "../../middleware/auth.middleware";
 import {
@@ -40,6 +41,9 @@ router.get(
   filterByClass,
   getClasses,
 );
+
+// Xóa lớp
+router.delete("/classes/:class_name", verifyToken, deleteClass);
 
 // 📋 Chi tiết lớp
 router.get(

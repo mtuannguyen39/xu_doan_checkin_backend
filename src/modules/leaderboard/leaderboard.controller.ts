@@ -297,3 +297,51 @@ export const getClassDetail = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+// DELETE CLASS
+//chỉ có SUPER_ADMIN mới được xóa
+export const deleteClass = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    if (req.user.role !== "SUPER_ADMIN") {
+      return res
+        .status(403)
+        .json({ error: "Chỉ Super Admin mới có thể xóa lớp!" });
+    }
+
+    const class_name = decodeURIComponent(String(req.params["class_name"]));
+
+    // Kiểm tra lớp có tồn tại không
+    const studentCount = await prisma.student.count({ where: { class_name } });
+    if (studentCount === 0) {
+      return res
+        .status(404)
+        .json({ error: "Lớp không tồn tại hoặc đã không có học sinh!" });
+    }
+
+    // Lấy tất cả student IDs trong lớp
+    const students = await prisma.student.findMany({
+      where: { class_name },
+      select: { id: true },
+    });
+    const studentIds = students.map((s) => s.id);
+
+    // Xóa theo thứ tự tránh foreign key constraint
+    await prisma.checkinDetail.deleteMany({
+      where: { checkin: { student_id: { in: studentIds } } },
+    });
+    await prisma.checkin.deleteMany({
+      where: { student_id: { in: studentIds } },
+    });
+    await prisma.student.deleteMany({ where: { class_name } });
+
+    return res.json({
+      message: `Đã xóa lớp "${class_name}" và ${studentCount} thiếu nhi thành công!`,
+      deleted_students: studentCount,
+    });
+  } catch (error) {
+    console.error("Error deleting class:", error);
+    return res.status(500).json({ error: "Xóa lớp thất bại!" });
+  }
+};
