@@ -197,3 +197,33 @@ export const deleteStudent = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Xóa thiếu nhi thất bại!" });
   }
 };
+
+export const getQRByStudentId = async (req: AuthRequest, res: Response) => {
+  try {
+    if(!req.user) return res.status(401).json({error: "Unauthorized!"});
+
+    const id = String(req.params["id"]);
+    const {role, class_name} = req.user;
+
+    const student = await prisma.student.findUnique({where: {id}});
+    if(!student) return res.status(404).json({error: "Không tìm thấy thiếu nhi!"});
+
+    // TRUONG_LOP  chỉ xem được lớp mình
+    if(role === "TRUONG_LOP" && student.class_name !== class_name) {
+      return res.status(403).json({error: "Bạn chỉ có thể xem QR của thiếu nhi trong lớp mình!"});
+    }
+
+    return res.json({
+      data: {
+        id: student.id,
+        full_name: student.full_name,
+        saint_name: student.saint_name,
+        class_name: student.class_name,
+        nganh: student.nganh,
+        qr_code: student.qr_code // UUID để render QR
+      }
+    }) 
+  } catch (error) {
+    return res.status(500).json({error: "Lấy QR thất bại!"});
+  }
+}

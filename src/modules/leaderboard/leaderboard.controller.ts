@@ -255,6 +255,7 @@ export const getClassDetail = async (req: AuthRequest, res: Response) => {
 
       const recentCheckins = student.checkins.slice(0, 5).map((c) => ({
         date: c.checkin_date,
+        checkin_tiem: c.created_at,
         point: c.total_point,
         activities: c.details.map((d) => ({
           name: d.activity.name,

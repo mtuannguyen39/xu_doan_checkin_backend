@@ -5,12 +5,14 @@ import {
   getAllStudents,
   deleteStudent,
   updateStudent,
+  getQRByStudentId,
 } from "./students.controller";
 import { verifyToken } from "../../middleware/auth.middleware";
 
 const router = Router();
 
 router.post("/register", registerStudent);
+router.get("/qr/:id", verifyToken, getQRByStudentId);
 router.get("/:qr", getStudentByQR);
 router.get("/", verifyToken, getAllStudents);
 

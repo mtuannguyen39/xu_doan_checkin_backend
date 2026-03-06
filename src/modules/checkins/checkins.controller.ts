@@ -7,52 +7,70 @@ import { calculateCheckinPoint } from "../../utils/calculateCheckinPoint";
 interface ScanQRRequest {
   qr_code: string;
 }
-
 interface CheckinRequest {
   student_id: string;
   checked_by: number;
-  activities: number[]; // Array of activity IDs
+  activities: number[];
 }
-
 interface StudentParams {
   student_id: string;
 }
 
+// ============================================================
+// Helper: lấy ngày đúng theo giờ Việt Nam
+// Tránh bug: server UTC thấy 23:50 05/03 khi VN đang là 06:50 sáng 06/03
+// ============================================================
+function getVietnamDate(now: Date): Date {
+  const vnDateStr = now.toLocaleDateString("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+  }); // → "2025-03-06"
+  return new Date(vnDateStr + "T00:00:00.000Z");
+}
+
+// ============================================================
+// Helper: kiểm tra có phải Chủ nhật theo giờ VN không
+// getDay() = 0 là Chủ nhật
+// ============================================================
+function isVietnamSunday(now: Date): boolean {
+  const vnDay = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }),
+  ).getDay();
+  return vnDay === 0;
+}
+
+// ============================================================
+// POST /api/checkins/scan
+// ============================================================
 export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
   try {
     const { qr_code } = req.body as ScanQRRequest;
 
     if (!qr_code || !uuidValidate(qr_code)) {
-      return res.status(400).json({ error: "Invalid QR code" });
-    }
-    const student = await prisma.student.findUnique({
-      where: { qr_code },
-    });
-
-    if (!student) {
-      return res.status(404).json({ error: "Student not found" });
+      return res.status(400).json({ error: "Mã QR không hợp lệ!" });
     }
 
-    if (!student.is_active) {
-      return res.status(400).json({ error: "Student is not active" });
-    }
-
+    const student = await prisma.student.findUnique({ where: { qr_code } });
+    if (!student)
+      return res.status(404).json({ error: "Không tìm thấy thiếu nhi!" });
+    if (!student.is_active)
+      return res
+        .status(400)
+        .json({ error: "Tài khoản thiếu nhi đã bị vô hiệu hóa!" });
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-    if (req.user.role === "TRUONG_LOP") {
-      if (student.class_name !== req.user.class_name) {
-        return res.status(403).json({
-          message: "Bạn chỉ có quyền checkin cho Thiếu nhi ở trong lớp",
-        });
-      }
+    if (
+      req.user.role === "TRUONG_LOP" &&
+      student.class_name !== req.user.class_name
+    ) {
+      return res.status(403).json({
+        message: "Bạn chỉ có quyền checkin cho Thiếu nhi ở trong lớp!",
+      });
     }
 
-    const today = new Date();
-    const checkDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-    );
+    const now = new Date();
+
+    // ✅ FIX: ngày theo giờ VN, không dùng getFullYear/Month/Date của server UTC
+    const checkDate = getVietnamDate(now);
 
     const existing = await prisma.checkin.findUnique({
       where: {
@@ -62,19 +80,17 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
         },
       },
     });
-
     if (existing) {
-      return res.status(400).json({
-        message: "Student already checked in today",
-      });
+      return res
+        .status(400)
+        .json({ message: "Thiếu nhi đã được điểm danh Chủ nhật này rồi!" });
     }
 
-    // Tính điểm theo giờ
-    const total_point = calculateCheckinPoint(today);
+    const total_point = calculateCheckinPoint(now);
     const timeLabel =
-      total_point === 5 ? "Đúng giờ"
-      : total_point === 2 ? "Trễ nhẹ"
-      : "Trễ, nhưng vẫn điểm danh được!";
+      total_point === 5 ? "Đúng giờ ✅"
+      : total_point === 2 ? "Trễ nhẹ ⚠️"
+      : "Trễ ❌";
 
     const checkin = await prisma.checkin.create({
       data: {
@@ -85,63 +101,47 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
       },
       include: {
         student: true,
-        leader: {
-          select: {
-            id: true,
-            full_name: true,
-          },
-        },
+        leader: { select: { id: true, full_name: true } },
       },
     });
 
-    res.status(201).json({
-      message: `Điểm danh thành công với ${timeLabel} (+${total_point} point)`,
+    return res.status(201).json({
+      message: `Điểm danh thành công! ${timeLabel} (+${total_point} điểm)`,
       data: { ...checkin, point_earned: total_point, time_label: timeLabel },
     });
   } catch (error) {
     console.error("Checkin failed:", error);
-    res.status(500).json({ error: "Checkin failed" });
+    return res.status(500).json({ error: "Điểm danh thất bại!" });
   }
 };
 
+// ============================================================
+// POST /api/checkins
+// ============================================================
 export const createCheckin = async (req: AuthRequest, res: Response) => {
   try {
     const { student_id, activities } = req.body as CheckinRequest;
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const checked_by = req.user.id;
 
-    // Validate input
-    if (!student_id || !checked_by || !activities || activities.length === 0) {
+    if (!student_id || !activities || activities.length === 0) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const today = new Date();
-    const checkDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-    );
+    const now = new Date();
+
+    const checkDate = getVietnamDate(now);
 
     const existing = await prisma.checkin.findUnique({
       where: {
-        student_id_checkin_date: {
-          student_id,
-          checkin_date: checkDate,
-        },
+        student_id_checkin_date: { student_id, checkin_date: checkDate },
       },
     });
-
-    if (existing) {
+    if (existing)
       return res.status(400).json({ message: "Already checked in today" });
-    }
 
     const activityData = await prisma.activity.findMany({
-      where: {
-        id: { in: activities },
-        is_active: true,
-      },
+      where: { id: { in: activities }, is_active: true },
     });
-
     if (!activityData || activityData.length === 0) {
       return res.status(404).json({ error: "No valid activities found" });
     }
@@ -154,7 +154,7 @@ export const createCheckin = async (req: AuthRequest, res: Response) => {
     const checkin = await prisma.checkin.create({
       data: {
         student_id,
-        checked_by,
+        checked_by: req.user.id,
         checkin_date: checkDate,
         total_point: totalPoint,
         details: {
@@ -165,26 +165,24 @@ export const createCheckin = async (req: AuthRequest, res: Response) => {
         },
       },
       include: {
-        details: {
-          include: {
-            activity: true,
-          },
-        },
+        details: { include: { activity: true } },
         student: true,
       },
     });
 
-    res.status(201).json(checkin);
+    return res.status(201).json(checkin);
   } catch (error) {
     console.error("Checkin failed:", error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "Checkin failed",
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-// Lấy student stats
+// ============================================================
+// GET /api/checkins/:student_id/history
+// ============================================================
 export const getCheckinHistory = async (
   req: Request<StudentParams>,
   res: Response,
@@ -205,6 +203,9 @@ export const getCheckinHistory = async (
   }
 };
 
+// ============================================================
+// GET /api/checkins/:student_id/stats
+// ============================================================
 export const getStudentStats = async (
   req: Request<StudentParams>,
   res: Response,
@@ -217,7 +218,6 @@ export const getStudentStats = async (
       _count: true,
     });
 
-    // Thống kê breakdown theo mức điểm
     const breakdown = await prisma.checkin.groupBy({
       by: ["total_point"],
       where: { student_id },
