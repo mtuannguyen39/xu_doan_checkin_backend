@@ -212,3 +212,156 @@ export const getFullStatistics = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Failed to fetch statistics" });
   }
 };
+
+const ALLOWED_ROLES = [
+  "SUPER_ADMIN",
+  "XU_DOAN_TRUONG",
+  "XU_DOAN_PHO",
+  "TRUONG_TRUC",
+];
+
+export const exportAllClasses = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    if (!ALLOWED_ROLES.includes(req.user.role)) {
+      return res
+        .status(403)
+        .json({ error: "Bạn không có quyền export toàn đoàn!" });
+    }
+
+    // Tất cả lớp + học sinh + checkin
+    const allStudents = await prisma.student.findMany({
+      include: {
+        checkins: { orderBy: { checkin_date: "desc" } },
+      },
+      orderBy: [{ class_name: "asc" }, { id: "asc" }],
+    });
+
+    // Tổng hợp theo lớp
+    const classMap = new Map<
+      string,
+      {
+        class_name: string;
+        nganh: string;
+        students: typeof allStudents;
+      }
+    >();
+
+    for (const s of allStudents) {
+      if (!classMap.has(s.class_name)) {
+        classMap.set(s.class_name, {
+          class_name: s.class_name,
+          nganh: s.nganh,
+          students: [],
+        });
+      }
+      classMap.get(s.class_name)!.students.push(s);
+    }
+
+    // Tổng số buổi điểm danh (tất cả lớp)
+    const allDates = await prisma.checkin.findMany({
+      select: { checkin_date: true },
+      distinct: ["checkin_date"],
+      orderBy: { checkin_date: "desc" },
+    });
+    const totalSessions = allDates.length;
+
+    // Build danh sách lớp tổng quan
+    const classStats = Array.from(classMap.values()).map((cls, idx) => {
+      const totalStudents = cls.students.length;
+      const totalCheckins = cls.students.reduce(
+        (s, st) => s + st.checkins.length,
+        0,
+      );
+      const totalPoints = cls.students.reduce(
+        (s, st) =>
+          s + st.checkins.reduce((a, c) => a + (c.total_point ?? 0), 0),
+        0,
+      );
+      const avgRate =
+        totalSessions > 0 && totalStudents > 0 ?
+          Math.round((totalCheckins / (totalSessions * totalStudents)) * 100)
+        : 0;
+
+      return {
+        stt: idx + 1,
+        class_name: cls.class_name,
+        nganh: cls.nganh,
+        total_students: totalStudents,
+        total_sessions: totalSessions,
+        avg_rate: avgRate,
+        total_points: totalPoints,
+      };
+    });
+
+    // Build danh sách học sinh (tất cả lớp)
+    const studentRows = allStudents.map((s, idx) => {
+      const totalCheckins = s.checkins.length;
+      const totalPoints = s.checkins.reduce(
+        (a, c) => a + (c.total_point ?? 0),
+        0,
+      );
+      const onTime = s.checkins.filter(
+        (c) => (c.total_point ?? 0) === 5,
+      ).length;
+      const late2 = s.checkins.filter((c) => (c.total_point ?? 0) === 2).length;
+      const late0 = s.checkins.filter((c) => (c.total_point ?? 0) === 0).length;
+      const rate =
+        totalSessions > 0 ?
+          Math.round((totalCheckins / totalSessions) * 100)
+        : 0;
+
+      return {
+        stt: idx + 1,
+        id: s.id,
+        full_name: s.full_name,
+        saint_name: s.saint_name,
+        class_name: s.class_name,
+        nganh: s.nganh,
+        phone: s.phone ?? "",
+        is_active: s.is_active,
+        total_checkins: totalCheckins,
+        total_points: totalPoints,
+        on_time: onTime,
+        late_2pts: late2,
+        late_0pts: late0,
+        attendance_rate: rate,
+      };
+    });
+
+    // Session summary (8 buổi gần nhất)
+    const sessionSummary = await Promise.all(
+      allDates.slice(0, 8).map(async ({ checkin_date }) => {
+        const dayCheckins = await prisma.checkin.findMany({
+          where: { checkin_date },
+          select: { total_point: true },
+        });
+        const totalStudentsAll = allStudents.length;
+        return {
+          date: checkin_date,
+          total: dayCheckins.length,
+          on_time: dayCheckins.filter((c) => (c.total_point ?? 0) === 5).length,
+          late_2: dayCheckins.filter((c) => (c.total_point ?? 0) === 2).length,
+          late_0: dayCheckins.filter((c) => (c.total_point ?? 0) === 0).length,
+          absent: totalStudentsAll - dayCheckins.length,
+        };
+      }),
+    );
+
+    return res.json({
+      meta: {
+        scope: "all",
+        total_students: allStudents.length,
+        total_sessions: totalSessions,
+        total_classes: classMap.size,
+        exported_at: new Date().toISOString(),
+      },
+      class_stats: classStats,
+      students: studentRows,
+      session_summary: sessionSummary,
+    });
+  } catch (error) {
+    console.error("Export all failed:", error);
+    return res.status(500).json({ error: "Export thất bại!" });
+  }
+};

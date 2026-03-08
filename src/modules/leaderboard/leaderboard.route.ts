@@ -5,6 +5,7 @@ import {
   getClasses,
   getClassDetail,
   deleteClass,
+  exportClassData,
 } from "./leaderboard.controller";
 import { verifyToken } from "../../middleware/auth.middleware";
 import {
@@ -44,6 +45,15 @@ router.get(
 
 // Xóa lớp
 router.delete("/classes/:class_name", verifyToken, deleteClass);
+
+// Export data lớp
+router.get(
+  "/classes/:class_name/export",
+  verifyToken,
+  requireAnyPermission("classes:read", "classes:read_own"),
+  filterByClass,
+  exportClassData,
+);
 
 // 📋 Chi tiết lớp
 router.get(

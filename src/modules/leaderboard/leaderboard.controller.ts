@@ -254,6 +254,7 @@ export const getClassDetail = async (req: AuthRequest, res: Response) => {
       );
 
       const recentCheckins = student.checkins.slice(0, 5).map((c) => ({
+        checkin_id: c.id,
         date: c.checkin_date,
         checkin_tiem: c.created_at,
         point: c.total_point,
@@ -344,5 +345,131 @@ export const deleteClass = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error deleting class:", error);
     return res.status(500).json({ error: "Xóa lớp thất bại!" });
+  }
+};
+
+export const exportClassData = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const className = decodeURIComponent(String(req.params["class_name"]));
+    const { role, class_name: userClass } = req.user;
+
+    // TRUONG_LOP chỉ export lớp mình
+    if (role === "TRUONG_LOP" && userClass !== className) {
+      return res
+        .status(403)
+        .json({ error: "Bạn chỉ có thể export lớp của mình!" });
+    }
+
+    // Lấy tất cả học sinh trong lớp
+    const students = await prisma.student.findMany({
+      where: { class_name: className },
+      include: {
+        checkins: {
+          orderBy: { checkin_date: "desc" },
+          take: 50, // tối đa 50 buổi gần nhất
+        },
+      },
+      orderBy: { id: "asc" },
+    });
+
+    if (students.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Lớp không tồn tại hoặc chưa có học sinh!" });
+    }
+
+    // Tất cả ngày điểm danh duy nhất của lớp (để tính tổng buổi)
+    const allDates = await prisma.checkin.findMany({
+      where: { student: { class_name: className } },
+      select: { checkin_date: true },
+      distinct: ["checkin_date"],
+      orderBy: { checkin_date: "desc" },
+    });
+    const totalSessions = allDates.length;
+
+    // Build dữ liệu từng học sinh
+    const studentRows = students.map((s, idx) => {
+      const totalCheckins = s.checkins.length;
+      const totalPoints = s.checkins.reduce(
+        (sum, c) => sum + (c.total_point ?? 0),
+        0,
+      );
+      const onTimeCount = s.checkins.filter(
+        (c) => (c.total_point ?? 0) === 5,
+      ).length;
+      const late2Count = s.checkins.filter(
+        (c) => (c.total_point ?? 0) === 2,
+      ).length;
+      const late0Count = s.checkins.filter(
+        (c) => (c.total_point ?? 0) === 0,
+      ).length;
+      const attendRate =
+        totalSessions > 0 ?
+          Math.round((totalCheckins / totalSessions) * 100)
+        : 0;
+
+      return {
+        stt: idx + 1,
+        id: s.id,
+        full_name: s.full_name,
+        saint_name: s.saint_name,
+        phone: s.phone ?? "",
+        is_active: s.is_active,
+        total_checkins: totalCheckins,
+        total_points: totalPoints,
+        on_time: onTimeCount,
+        late_2pts: late2Count,
+        late_0pts: late0Count,
+        attendance_rate: attendRate,
+        // 8 buổi gần nhất dưới dạng cột riêng
+        recent_sessions: allDates.slice(0, 8).map(({ checkin_date }) => {
+          const c = s.checkins.find((ch) =>
+            ch.checkin_date
+              .toISOString()
+              .startsWith(checkin_date.toISOString().substring(0, 10)),
+          );
+          return {
+            date: checkin_date,
+            point: c ? (c.total_point ?? 0) : null, // null = vắng
+          };
+        }),
+      };
+    });
+
+    // Session summary (8 buổi gần nhất)
+    const sessionSummary = await Promise.all(
+      allDates.slice(0, 8).map(async ({ checkin_date }) => {
+        const dayCheckins = await prisma.checkin.findMany({
+          where: { checkin_date, student: { class_name: className } },
+          select: { total_point: true },
+        });
+        return {
+          date: checkin_date,
+          total: dayCheckins.length,
+          on_time: dayCheckins.filter((c) => (c.total_point ?? 0) === 5).length,
+          late_2: dayCheckins.filter((c) => (c.total_point ?? 0) === 2).length,
+          late_0: dayCheckins.filter((c) => (c.total_point ?? 0) === 0).length,
+          absent: students.length - dayCheckins.length,
+        };
+      }),
+    );
+
+    return res.json({
+      meta: {
+        class_name: className,
+        total_students: students.length,
+        total_sessions: totalSessions,
+        exported_at: new Date().toISOString(),
+        nganh: students[0]?.nganh ?? "",
+      },
+      students: studentRows,
+      session_summary: sessionSummary,
+      recent_dates: allDates.slice(0, 8).map((d) => d.checkin_date),
+    });
+  } catch (error) {
+    console.error("Export error:", error);
+    return res.status(500).json({ error: "Export thất bại!" });
   }
 };

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  exportAllClasses,
   getDashboardStatistics,
   getFullStatistics,
 } from "./statistics.controller";
@@ -15,6 +16,13 @@ const allRoles = [
   "XU_DOAN_TRUONG",
   "SUPER_ADMIN",
 ] as const;
+
+// Xuất data
+router.get(
+  "/export",
+  verifyToken,
+  exportAllClasses, // RBAC check nằm trong controller
+);
 
 // Trang chủ dashboard
 router.get(

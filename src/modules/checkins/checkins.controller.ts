@@ -238,3 +238,80 @@ export const getStudentStats = async (
     return res.status(500).json({ error: "Failed to fetch student stats" });
   }
 };
+
+import { Response } from "express";
+import { prisma } from "../../lib/prisma";
+import { AuthRequest } from "../../middleware/auth.middleware";
+
+const VALID_POINTS = [0, 2, 5]; // Các mức điểm hợp lệ
+const ALLOWED_ROLES = ["SUPER_ADMIN", "XU_DOAN_TRUONG", "XU_DOAN_PHO", "TRUONG_TRUC", "TRUONG_LOP"];
+
+export const updateCheckinPoint = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const { role, class_name: userClass } = req.user;
+    const checkinId = parseInt(String(req.params["checkin_id"]), 10);
+    const { point, reason } = req.body as { point: number; reason?: string };
+
+    if (!ALLOWED_ROLES.includes(role)) {
+      return res.status(403).json({ error: "Bạn không có quyền chỉnh sửa điểm!" });
+    }
+
+    if (!VALID_POINTS.includes(point)) {
+      return res.status(400).json({
+        error: `Điểm không hợp lệ! Chỉ chấp nhận: ${VALID_POINTS.join(", ")}`,
+      });
+    }
+
+    if (isNaN(checkinId)) {
+      return res.status(400).json({ error: "ID điểm danh không hợp lệ!" });
+    }
+
+    // Lấy checkin kèm thông tin student
+    const checkin = await prisma.checkin.findUnique({
+      where:   { id: checkinId },
+      include: { student: true },
+    });
+
+    if (!checkin) {
+      return res.status(404).json({ error: "Không tìm thấy bản ghi điểm danh!" });
+    }
+
+    // TRUONG_LOP chỉ sửa được lớp mình
+    if (role === "TRUONG_LOP" && checkin.student.class_name !== userClass) {
+      return res.status(403).json({
+        error: "Bạn chỉ có thể chỉnh sửa điểm của thiếu nhi trong lớp mình!",
+      });
+    }
+
+    const oldPoint = checkin.total_point;
+
+    const updated = await prisma.checkin.update({
+      where: { id: checkinId },
+      data:  { total_point: point },
+      include: {
+        student: { select: { id: true, full_name: true, class_name: true } },
+        leader:  { select: { id: true, full_name: true } },
+      },
+    });
+
+    const pointLabel = point === 5 ? "Đúng giờ" : point === 2 ? "Trễ nhẹ" : "Trễ";
+
+    return res.json({
+      message: `Đã cập nhật điểm: ${oldPoint} → ${point} (${pointLabel})`,
+      data: {
+        checkin_id:  updated.id,
+        student:     updated.student,
+        old_point:   oldPoint,
+        new_point:   point,
+        point_label: pointLabel,
+        updated_by:  updated.leader,
+        reason:      reason ?? "",
+      },
+    });
+  } catch (error) {
+    console.error("Update checkin point failed:", error);
+    return res.status(500).json({ error: "Cập nhật điểm thất bại!" });
+  }
+};
