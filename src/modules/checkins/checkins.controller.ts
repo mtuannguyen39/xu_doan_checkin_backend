@@ -27,10 +27,6 @@ function getVietnamDate(now: Date): Date {
   return new Date(vnDateStr + "T00:00:00.000Z");
 }
 
-// ============================================================
-// Helper: kiểm tra có phải Chủ nhật theo giờ VN không
-// getDay() = 0 là Chủ nhật
-// ============================================================
 function isVietnamSunday(now: Date): boolean {
   const vnDay = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }),
@@ -69,7 +65,7 @@ export const scanQRCheckin = async (req: AuthRequest, res: Response) => {
 
     const now = new Date();
 
-    // ✅ FIX: ngày theo giờ VN, không dùng getFullYear/Month/Date của server UTC
+    // ngày theo giờ VN, không dùng getFullYear/Month/Date của server UTC
     const checkDate = getVietnamDate(now);
 
     const existing = await prisma.checkin.findUnique({
@@ -239,12 +235,14 @@ export const getStudentStats = async (
   }
 };
 
-import { Response } from "express";
-import { prisma } from "../../lib/prisma";
-import { AuthRequest } from "../../middleware/auth.middleware";
-
 const VALID_POINTS = [0, 2, 5]; // Các mức điểm hợp lệ
-const ALLOWED_ROLES = ["SUPER_ADMIN", "XU_DOAN_TRUONG", "XU_DOAN_PHO", "TRUONG_TRUC", "TRUONG_LOP"];
+const ALLOWED_ROLES = [
+  "SUPER_ADMIN",
+  "XU_DOAN_TRUONG",
+  "XU_DOAN_PHO",
+  "TRUONG_TRUC",
+  "TRUONG_LOP",
+];
 
 export const updateCheckinPoint = async (req: AuthRequest, res: Response) => {
   try {
@@ -255,7 +253,9 @@ export const updateCheckinPoint = async (req: AuthRequest, res: Response) => {
     const { point, reason } = req.body as { point: number; reason?: string };
 
     if (!ALLOWED_ROLES.includes(role)) {
-      return res.status(403).json({ error: "Bạn không có quyền chỉnh sửa điểm!" });
+      return res
+        .status(403)
+        .json({ error: "Bạn không có quyền chỉnh sửa điểm!" });
     }
 
     if (!VALID_POINTS.includes(point)) {
@@ -270,12 +270,14 @@ export const updateCheckinPoint = async (req: AuthRequest, res: Response) => {
 
     // Lấy checkin kèm thông tin student
     const checkin = await prisma.checkin.findUnique({
-      where:   { id: checkinId },
+      where: { id: checkinId },
       include: { student: true },
     });
 
     if (!checkin) {
-      return res.status(404).json({ error: "Không tìm thấy bản ghi điểm danh!" });
+      return res
+        .status(404)
+        .json({ error: "Không tìm thấy bản ghi điểm danh!" });
     }
 
     // TRUONG_LOP chỉ sửa được lớp mình
@@ -289,25 +291,28 @@ export const updateCheckinPoint = async (req: AuthRequest, res: Response) => {
 
     const updated = await prisma.checkin.update({
       where: { id: checkinId },
-      data:  { total_point: point },
+      data: { total_point: point },
       include: {
         student: { select: { id: true, full_name: true, class_name: true } },
-        leader:  { select: { id: true, full_name: true } },
+        leader: { select: { id: true, full_name: true } },
       },
     });
 
-    const pointLabel = point === 5 ? "Đúng giờ" : point === 2 ? "Trễ nhẹ" : "Trễ";
+    const pointLabel =
+      point === 5 ? "Đúng giờ"
+      : point === 2 ? "Trễ nhẹ"
+      : "Trễ";
 
     return res.json({
       message: `Đã cập nhật điểm: ${oldPoint} → ${point} (${pointLabel})`,
       data: {
-        checkin_id:  updated.id,
-        student:     updated.student,
-        old_point:   oldPoint,
-        new_point:   point,
+        checkin_id: updated.id,
+        student: updated.student,
+        old_point: oldPoint,
+        new_point: point,
         point_label: pointLabel,
-        updated_by:  updated.leader,
-        reason:      reason ?? "",
+        updated_by: updated.leader,
+        reason: reason ?? "",
       },
     });
   } catch (error) {
