@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   exportAllClasses,
+  exportAllDay,
   getDashboardStatistics,
   getFullStatistics,
 } from "./statistics.controller";
@@ -16,6 +17,9 @@ const allRoles = [
   "XU_DOAN_TRUONG",
   "SUPER_ADMIN",
 ] as const;
+
+// Xuất data theo ngày
+router.get("/export/day", verifyToken, exportAllDay);
 
 // Xuất data
 router.get(

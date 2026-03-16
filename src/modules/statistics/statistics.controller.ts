@@ -365,3 +365,108 @@ export const exportAllClasses = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Export thất bại!" });
   }
 };
+
+export const exportAllDay = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    if (!ALLOWED_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: "Không có quyền export toàn đoàn!" });
+    }
+ 
+    const dateParam = req.query["date"] as string;
+    if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return res.status(400).json({ error: "Thiếu hoặc sai định dạng date! Dùng YYYY-MM-DD" });
+    }
+ 
+    const targetDate = new Date(dateParam + "T00:00:00.000Z");
+ 
+    // Tất cả học sinh, group theo lớp
+    const allStudents = await prisma.student.findMany({
+      orderBy: [{ class_name: "asc" }, { full_name: "asc" }],
+    });
+ 
+    if (allStudents.length === 0) {
+      return res.status(404).json({ error: "Chưa có học sinh nào!" });
+    }
+ 
+    // Tất cả checkin của ngày đó (toàn đoàn)
+    const dayCheckins = await prisma.checkin.findMany({
+      where: { checkin_date: targetDate },
+      include: {
+        leader: { select: { full_name: true } },
+      },
+    });
+ 
+    const checkinMap = new Map(dayCheckins.map((c) => [c.student_id, c]));
+ 
+    // Build rows từng em
+    const rows = allStudents.map((s, idx) => {
+      const c     = checkinMap.get(s.id);
+      const point = c ? (c.total_point ?? 0) : null;
+      return {
+        stt:          idx + 1,
+        id:           s.id,
+        full_name:    s.full_name,
+        saint_name:   s.saint_name,
+        class_name:   s.class_name,
+        nganh:        s.nganh,
+        phone:        s.phone ?? "",
+        is_active:    s.is_active,
+        status:       c ? "present" : "absent",
+        point,
+        point_label:  point === 5 ? "Đúng giờ"
+                    : point === 2 ? "Trễ nhẹ"
+                    : point === 0 ? "Trễ"
+                    : "Vắng",
+        checkin_time: c?.created_at ?? null,
+        checked_by:   c?.leader?.full_name ?? "",
+      };
+    });
+ 
+    // Summary theo lớp
+    const classNames = [...new Set(allStudents.map((s) => s.class_name))];
+    const classSummary = classNames.map((cn) => {
+      const classRows    = rows.filter((r) => r.class_name === cn);
+      const presentCount = classRows.filter((r) => r.status === "present").length;
+      return {
+        class_name:      cn,
+        total_students:  classRows.length,
+        present:         presentCount,
+        absent:          classRows.length - presentCount,
+        on_time:         classRows.filter((r) => r.point === 5).length,
+        late_2:          classRows.filter((r) => r.point === 2).length,
+        late_0:          classRows.filter((r) => r.point === 0).length,
+        attendance_rate: classRows.length > 0
+          ? Math.round((presentCount / classRows.length) * 100) : 0,
+      };
+    });
+ 
+    const presentTotal = rows.filter((r) => r.status === "present").length;
+ 
+    return res.json({
+      meta: {
+        scope:           "all",
+        date:            targetDate,
+        date_label:      new Date(dateParam).toLocaleDateString("vi-VN", {
+          weekday: "long", day: "2-digit", month: "2-digit", year: "numeric",
+          timeZone: "UTC",
+        }),
+        total_students:  allStudents.length,
+        total_classes:   classNames.length,
+        present:         presentTotal,
+        absent:          allStudents.length - presentTotal,
+        on_time:         rows.filter((r) => r.point === 5).length,
+        late_2:          rows.filter((r) => r.point === 2).length,
+        late_0:          rows.filter((r) => r.point === 0).length,
+        attendance_rate: allStudents.length > 0
+          ? Math.round((presentTotal / allStudents.length) * 100) : 0,
+        exported_at:     new Date().toISOString(),
+      },
+      rows,
+      class_summary: classSummary,
+    });
+  } catch (error) {
+    console.error("Export all day error:", error);
+    return res.status(500).json({ error: "Export thất bại!" });
+  }
+};

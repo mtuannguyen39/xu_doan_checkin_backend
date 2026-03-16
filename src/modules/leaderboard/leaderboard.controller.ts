@@ -473,3 +473,100 @@ export const exportClassData = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: "Export thất bại!" });
   }
 };
+
+export const exportDayData = async (req: AuthRequest, res: Response) => {
+  try {
+    if(!req.user) return res.status(401).json({error: "Unauthorized!"});
+
+    const className = decodeURIComponent(String(req.params["class_name"]));
+    const {role, class_name: userClass} = req.user;
+
+    if(role === "TRUONG_LOP" && userClass !== className) {
+      return res.status(403).json({error: "Bạn chỉ có thể export lớp của mình!!!"});
+    }
+
+    // Validate date params
+    const dateParams = req.query["date"] as string;
+    if(!dateParams || !/^\d{4}-\d{2}-\d{2}$/.test(dateParams)) {
+      return res.status(400).json({error: "Thiếu hoặc sai định dạng date! Dùng YYYY-MM-DD"})
+    }
+
+    // Parse sang Date (UTC midnight) - sẽ khớp với @db.Date trong Prisma
+    const targetDate = new Date(dateParams + "T00:00:00.000Z");
+
+    // Lấy tất cả học sinh trong lớp
+    const students = await prisma.student.findMany({
+      where: {class_name: className},
+      orderBy: {full_name:"asc"}
+    });
+
+    if(students.length === 0) {
+      return res.status(404).json({error: "Lớp không tồn tại hoặc chưa có học sinh!"});
+    }
+
+    // Lấy tất cả checkins của ngày đó trong lớp
+    const dayCheckins = await prisma.checkin.findMany({
+      where: {
+        checkin_date: targetDate,
+        student: {class_name:className},
+      },
+      include: {
+        student: {select: {id: true, full_name: true, saint_name: true}},
+        leader: {select: {full_name: true}},
+      },
+      orderBy: {created_at: "asc"},
+    });
+
+    // Map checkin theo student_id để lookup nhanh
+    const checkinMap = new Map(dayCheckins.map((c) => [c.student_id, c]));
+
+    // Build danh sách từng em: có mặt hay vắng
+    const rows = students.map((s, idx) => {
+      const c = checkinMap.get(s.id);
+      const point = c ? (c.total_point ?? 0) : null;
+      return {
+        stt: idx + 1,
+        id: s.id,
+        full_name: s.full_name,
+        saint_name: s.saint_name,
+        phone: s.phone?? "",
+        is_active: s.is_active,
+        status: c ? "present" : "absent", // present || absent
+        point,
+        point_label: point === 5 ? "Đúng giờ" : point === 2 ?"Trễ nhẹ" : point === 0 ? "Trễ" : "Vắng",
+        checkin_time: c?.created_at ?? null,
+        checked_: c?.leader?.full_name ?? "",
+      }
+    })
+
+    const presentCount = rows.filter((r) => r.status === "present").length;
+    const absentCount = rows.filter((r) => r.status === "absent").length;
+    const onTime = rows.filter((r) => r.point === 5).length;
+    const late2 = rows.filter((r) => r.point === 2).length;
+    const late0 = rows.filter((r) => r.point === 0).length;
+
+    return res.json({
+      meta: {
+        class_name: className,
+        nganh: students[0]?.nganh ?? "",
+        date: targetDate,
+        date_label: new Date(dateParams).toLocaleDateString("vi-VN", {
+          weekday: "long", day: "2-digit", month: "2-digit", year: "numeric",
+          timeZone: "UTC",
+        }),
+        total_students: students.length,
+        present: presentCount,
+        absent: absentCount,
+        on_time: onTime,
+        late_2: late2,
+        late_0: late0,
+        attendance_rate: students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0,
+        exported_at: new Date().toISOString(),
+      },
+      rows,
+    })
+  } catch (error) {
+    console.error("Export day error:", error);
+    return res.status(500).json({error: "Export thất bại!"});
+  }
+}

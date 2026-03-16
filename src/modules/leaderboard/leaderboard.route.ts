@@ -6,6 +6,7 @@ import {
   getClassDetail,
   deleteClass,
   exportClassData,
+  exportDayData,
 } from "./leaderboard.controller";
 import { verifyToken } from "../../middleware/auth.middleware";
 import {
@@ -53,6 +54,15 @@ router.get(
   requireAnyPermission("classes:read", "classes:read_own"),
   filterByClass,
   exportClassData,
+);
+
+// Export 1 ngày cụ thể 
+router.get(
+  "/classes/:class_name/export/day",
+  verifyToken,
+  requireAnyPermission("classes:read", "classes:read_own"),
+  filterByClass,
+  exportDayData,
 );
 
 // 📋 Chi tiết lớp
