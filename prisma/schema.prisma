@@ -16,6 +16,7 @@ model User {
   created_at DateTime  @default(now())
 
   checkins   Checkin[] @relation("LeaderCheckins")
+  classAssignments ClassLeaderAssignment[]
 
   @@map("users")
 }
@@ -31,7 +32,17 @@ model Student {
   is_active  Boolean   @default(true)
   created_at DateTime  @default(now())
 
+  // Token riêng cho học bạ -> Quét QR này -> trang thông tin học bạ
+  hoc_ba_token String @unique @db.Uuid @default(dbgenerated("gen_random_uuid()"))
+  // Thông tin bổ sung (optional)
+  email      String?
+  parent_father_name  String?
+  parent_father_phone String?
+  parent_mother_name  String?
+  parent_mother_phone String?
+
   checkins   Checkin[]
+  scores     AcademicScore[]
 
   @@index([class_name])
   @@index([nganh])
@@ -80,10 +91,72 @@ model CheckinDetail {
   @@map("checkin_details")
 }
 
+// Học Bạ
+model SchoolYear {
+  id                Int     @id @default(autoincrement())
+  name              String  @unique // "2026-2027"
+  start_year        Int     // 2026
+  end_year          Int     // 2027
+  is_active         Boolean @default(false)
+  created_at        DateTime @default(now())
+
+  scores            AcademicScore[]
+  classAssignments  ClassLeaderAssignment[]
+
+  @@map("school_years")
+}
+
+// Mỗi row = 1 loại điểm của 1 học sinh trong 1 năm học
+// Score_type là key tự do -> admin thêm loại điểm mới không cần đổi schema
+// Các score_type mặc định gợi ý:
+// diem_15p | diem_1_tiet | diem_hk1 | diem_hk2 | tb_nam | tong_cuoi_ki
+model AcademicScore {
+  id                  Int @id @default(autoincrement())
+  student_id          String
+  school_year_id      Int
+  score_type          String // key tự do
+  label               String // Tên hiển thị, e.g. "Điểm kiểm tra 15 phút"
+  value               Float? // null = chưa cập nhật điểm
+  note                String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  student             Student @relation(fields: [student_id], references: [id])
+  schoolYear          SchoolYear @relation(fields: [school_year_id], references: [id])
+
+  @@unique([student_id, school_year_id, score_type])
+  @@index([student_id, school_year_id])
+  @@map("academic_scores")
+}
+
+// Phân công trưởng/sour phụ trách lớp theo từng năm học
+model ClassLeaderAssignment {
+  id                 Int @id @default(autoincrement())
+  school_year_id     Int
+  class_name         String
+  user_id            Int
+  assignment_role    ClassAssignmentRole
+  created_at         DateTime @default(now())
+
+  schoolYear         SchoolYear @relation(fields: [school_year_id], references: [id])
+  user               User @relation(fields: [user_id], references: [id])
+
+  @@unique([school_year_id, class_name, user_id])
+  @@index([school_year_id, class_name])
+  @@map("class_leader_assignments")
+}
+
+// ENUM
 enum UserRole {
   SUPER_ADMIN
   XU_DOAN_TRUONG
   XU_DOAN_PHO
   TRUONG_TRUC
   TRUONG_LOP
+}
+
+enum ClassAssignmentRole {
+  HUYNH_TRUONG
+  DU_TRUONG
+  SOUR
 }

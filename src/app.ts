@@ -8,6 +8,9 @@ import leaderboardRoutes from "./modules/leaderboard/leaderboard.route";
 import authRoutes from "./modules/auth/auth.route";
 import statisticsRoutes from "./modules/statistics/statistics.route";
 import rankingRoutes from "./modules/ranking/ranking.route";
+import schoolYearRouter from "./modules/school-years/routes/school-years.route";
+import hocBaRouter from "./modules/hoc-ba/routes/hoc-ba.route";
+import classAssignmentsRouter from "./modules/class-assignments/routes/class-assignments.route";
 
 const app = express();
 
@@ -59,6 +62,11 @@ app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/statistics", statisticsRoutes);
 app.use("/api/ranking", rankingRoutes);
 app.use("/api/auth", authRoutes);
+
+// New routes for HocBa 
+app.use("/api/school-years", schoolYearRouter);
+app.use("/api/hoc-ba", hocBaRouter);
+app.use("/api/class-assignments", classAssignmentsRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({
